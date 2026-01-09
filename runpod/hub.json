@@ -1,0 +1,12 @@
+{
+  "title": "WhisperX Worker",
+  "description": "High-accuracy audio transcription with speaker diarization using WhisperX",
+  "type": "serverless",
+  "category": "Audio",
+  "iconUrl": "https://raw.githubusercontent.com/m-bain/whisperX/main/assets/whisperx_logo.png",
+  "config": {
+    "runsOn": "gpu",
+    "containerDiskInGb": 20
+  },
+  "presets": []
+}

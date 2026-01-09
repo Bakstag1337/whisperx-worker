@@ -1,0 +1,11 @@
+{
+    "tests": [
+        {
+            "name": "validation_text_input",
+            "input": {
+                "audio": "https://github.com/runpod/containers/raw/main/official-templates/base/test_input.wav"
+            },
+            "timeout": 600
+        }
+    ]
+}
