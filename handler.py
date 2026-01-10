@@ -150,6 +150,9 @@ try:
         min_speakers = job_input.get('min_speakers')
         max_speakers = job_input.get('max_speakers')
 
+        # Optional language code (e.g. "en", "ru", "uk"). If not provided, auto-detect
+        language = job_input.get('language')
+
         # Output format: "full" (default) or "dialogue"
         output_format = job_input.get('format', 'full')
 
@@ -173,7 +176,16 @@ try:
             # 1. Transcribe
             print("Transcribing...", flush=True)
             audio = whisperx.load_audio(audio_path)
-            result = model.transcribe(audio, batch_size=batch_size)
+
+            # Pass language if provided, otherwise auto-detect
+            transcribe_options = {'batch_size': batch_size}
+            if language:
+                transcribe_options['language'] = language
+                print(f"Using language: {language}", flush=True)
+            else:
+                print("Auto-detecting language...", flush=True)
+
+            result = model.transcribe(audio, **transcribe_options)
             
             # 2. Align
             print("Aligning...", flush=True)
