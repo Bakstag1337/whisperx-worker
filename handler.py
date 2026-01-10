@@ -61,14 +61,21 @@ try:
                     "pyannote/speaker-diarization-3.1",
                     use_auth_token=hf_token
                 )
-                diarize_model.to(torch.device(device))
-                print("Diarization model loaded successfully.", flush=True)
+                if diarize_model is not None:
+                    diarize_model.to(torch.device(device))
+                    print("Diarization model loaded successfully.", flush=True)
+                else:
+                    print("WARNING: Diarization model is None after loading.", flush=True)
+                    diarize_model = None
             except Exception as e:
                  print(f"WARNING: Failed to load Diarization Model: {e}", flush=True)
+                 import traceback
+                 traceback.print_exc()
                  diarize_model = None
                  # We don't raise here to allow basic transcription to work
         else:
             print("No HF_TOKEN provided. Diarization disabled.", flush=True)
+            diarize_model = None
 
     def download_file(url, local_path):
         with requests.get(url, stream=True) as r:
