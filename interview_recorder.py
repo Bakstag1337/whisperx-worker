@@ -557,9 +557,10 @@ class InterviewRecorder:
                 print("✓ Аудиофайл удалён")
 
         except Exception as e:
-            print(f"❌ Ошибка: {e}")
-            self.root.after(0, lambda: self.status_var.set(f"❌ Ошибка: {str(e)[:30]}"))
-            self.root.after(0, lambda: messagebox.showerror("Ошибка транскрипции", str(e)))
+            error_msg = str(e)
+            print(f"❌ Ошибка: {error_msg}")
+            self.root.after(0, lambda: self.status_var.set(f"❌ Ошибка: {error_msg[:30]}"))
+            self.root.after(0, lambda: messagebox.showerror("Ошибка транскрипции", error_msg))
         finally:
             self.transcribing = False
             self.root.after(0, lambda: self.record_btn.config(state=tk.NORMAL))
