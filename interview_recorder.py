@@ -416,10 +416,25 @@ class InterviewRecorder:
 
                 print(f"✓ Загружено: {file_url}")
                 print(f"   Record ID: {record_id}")
-                return file_url
+                return file_url, record_id
 
         except requests.RequestException as e:
             raise ValueError(f"Не удалось загрузить в PocketBase: {str(e)}")
+
+    def delete_from_pocketbase(self, record_id):
+        """Удаление файла из PocketBase после использования."""
+        pocketbase_url = "https://disappear-night.pockethost.io"
+        collection = "temp_audio"
+
+        try:
+            response = requests.delete(
+                f"{pocketbase_url}/api/collections/{collection}/records/{record_id}",
+                timeout=30
+            )
+            response.raise_for_status()
+            print(f"✓ Файл удален из PocketBase (Record ID: {record_id})")
+        except requests.RequestException as e:
+            print(f"⚠️ Не удалось удалить из PocketBase: {str(e)}")
 
     def transcribe_on_server(self, filepath):
         """Отправка файла на сервер для транскрипции."""
@@ -436,6 +451,8 @@ class InterviewRecorder:
         lang = self.language_var.get()
 
         # Выбор метода: base64 для малых файлов, PocketBase URL для больших
+        pocketbase_record_id = None  # Для автоудаления после транскрипции
+
         if file_size_mb < 1:
             # Малый файл - отправляем через base64 (быстрее)
             print(f"   Метод: base64 (файл < 1 MB)")
@@ -455,7 +472,7 @@ class InterviewRecorder:
         else:
             # Большой файл - загружаем в PocketBase и отправляем URL
             print(f"   Метод: URL через PocketBase (файл >= 1 MB)")
-            audio_url = self.upload_to_pocketbase(filepath)
+            audio_url, pocketbase_record_id = self.upload_to_pocketbase(filepath)
 
             payload = {
                 "input": {
@@ -490,17 +507,30 @@ class InterviewRecorder:
 
             # RunPod возвращает результат в поле "output"
             if 'output' in result:
-                return result['output']
+                output = result['output']
             elif 'id' in result:
                 # Асинхронный запрос - нужно опросить статус
                 job_id = result['id']
-                return self._poll_runpod_result(job_id, runpod_key)
+                output = self._poll_runpod_result(job_id, runpod_key)
             else:
                 raise ValueError(f"Неожиданный формат ответа: {result}")
 
+            # Удаляем файл из PocketBase после успешной обработки
+            if pocketbase_record_id:
+                self.delete_from_pocketbase(pocketbase_record_id)
+
+            return output
+
         except requests.Timeout:
+            # Удаляем файл даже при ошибке
+            if pocketbase_record_id:
+                self.delete_from_pocketbase(pocketbase_record_id)
             raise TimeoutError("Превышено время ожидания ответа от сервера")
         except requests.RequestException as e:
+            # Удаляем файл даже при ошибке
+            if pocketbase_record_id:
+                self.delete_from_pocketbase(pocketbase_record_id)
+
             error_detail = str(e)
             # Попробуем получить детали ошибки от сервера
             if hasattr(e, 'response') and e.response is not None:
