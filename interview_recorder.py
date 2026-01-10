@@ -16,6 +16,9 @@ import time
 import threading
 import struct
 import os
+import base64
+import json
+import requests
 from datetime import datetime
 from pathlib import Path
 import tkinter as tk
@@ -87,19 +90,22 @@ class InterviewRecorder:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("🎙 Interview Recorder")
-        self.root.geometry("450x450")
+        self.root.geometry("450x600")
         self.root.resizable(False, False)
-        
+
         self.recording = False
         self.process = None
         self.start_time = None
         self.output_file = None
         self.meter = None
         self.transcribing = False
-        
+
+        # Server transcription settings
+        self.runpod_endpoint = "https://api.runpod.ai/v2/yawnskk7m78v7w/run"
+
         self.setup_ui()
         self.check_dependencies()
-        
+
         print("=" * 50)
         print("🎙  Interview Recorder")
         print("=" * 50)
@@ -161,17 +167,38 @@ class InterviewRecorder:
         # Чекбоксы
         self.transcribe_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
-            options_frame, 
-            text="Транскрибировать (Whisper)", 
+            options_frame,
+            text="Транскрибировать (Whisper)",
             variable=self.transcribe_var
         ).pack(anchor=tk.W)
-        
+
         self.keep_audio_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
-            options_frame, 
-            text="Сохранить аудио (MP3, ~20 MB/час)", 
+            options_frame,
+            text="Сохранить аудио (MP3, ~20 MB/час)",
             variable=self.keep_audio_var
         ).pack(anchor=tk.W)
+
+        self.use_server_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            options_frame,
+            text="☁️ Транскрибировать на сервере (WhisperX + диаризация)",
+            variable=self.use_server_var
+        ).pack(anchor=tk.W, pady=(5, 0))
+
+        # Server API keys frame
+        server_frame = ttk.Frame(options_frame)
+        server_frame.pack(fill=tk.X, pady=(5, 0))
+
+        ttk.Label(server_frame, text="RunPod API Key:", font=("", 9)).pack(anchor=tk.W)
+        self.runpod_key_var = tk.StringVar()
+        runpod_entry = ttk.Entry(server_frame, textvariable=self.runpod_key_var, show="*", width=40)
+        runpod_entry.pack(fill=tk.X, pady=(2, 5))
+
+        ttk.Label(server_frame, text="HuggingFace Token:", font=("", 9)).pack(anchor=tk.W)
+        self.hf_token_var = tk.StringVar()
+        hf_entry = ttk.Entry(server_frame, textvariable=self.hf_token_var, show="*", width=40)
+        hf_entry.pack(fill=tk.X, pady=(2, 0))
         
         # Кнопки записи
         btn_frame = ttk.Frame(main)
@@ -332,7 +359,7 @@ class InterviewRecorder:
         if self.transcribing:
             messagebox.showwarning("Подождите", "Транскрипция уже выполняется")
             return
-            
+
         filepath = filedialog.askopenfilename(
             title="Выбери аудиофайл",
             initialdir=Path.home(),
@@ -341,17 +368,153 @@ class InterviewRecorder:
                 ("Все файлы", "*.*")
             ]
         )
-        
+
         if filepath:
             threading.Thread(target=self.transcribe_file, args=(filepath,), daemon=True).start()
+
+    def format_dialogue_to_text(self, dialogue_result):
+        """Форматирование результата диалога в текст."""
+        if 'error' in dialogue_result:
+            return f"ОШИБКА: {dialogue_result['error']}"
+
+        dialogue = dialogue_result.get('dialogue', [])
+        language = dialogue_result.get('language', 'unknown')
+        num_speakers = dialogue_result.get('num_speakers', 0)
+
+        lines = []
+        lines.append(f"Язык: {language}")
+        lines.append(f"Количество спикеров: {num_speakers}")
+        lines.append("=" * 60)
+        lines.append("")
+
+        for turn in dialogue:
+            speaker = turn.get('speaker', 'UNKNOWN')
+            text = turn.get('text', '')
+            start = turn.get('start', 0)
+            end = turn.get('end', 0)
+
+            timestamp = f"[{int(start//60):02d}:{int(start%60):02d} - {int(end//60):02d}:{int(end%60):02d}]"
+            lines.append(f"{speaker} {timestamp}:")
+            lines.append(text)
+            lines.append("")
+
+        return "\n".join(lines)
+
+    def transcribe_on_server(self, filepath):
+        """Отправка файла на сервер для транскрипции."""
+        runpod_key = self.runpod_key_var.get().strip()
+        hf_token = self.hf_token_var.get().strip()
+
+        if not runpod_key:
+            raise ValueError("RunPod API Key не указан")
+
+        # Читаем файл и конвертируем в base64
+        print(f"📤 Отправка на сервер: {filepath}")
+        file_size_mb = Path(filepath).stat().st_size / (1024 * 1024)
+        print(f"   Размер файла: {file_size_mb:.1f} MB")
+
+        self.root.after(0, lambda: self.status_var.set(f"📤 Загрузка файла ({file_size_mb:.1f} MB)..."))
+
+        with open(filepath, 'rb') as f:
+            audio_data = f.read()
+            audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+
+        # Подготовка запроса
+        lang = self.language_var.get()
+        payload = {
+            "input": {
+                "audio_base64": audio_base64,
+                "language": lang,
+                "format": "dialogue"
+            }
+        }
+
+        # Добавляем HF токен если указан
+        if hf_token:
+            payload["input"]["hf_token"] = hf_token
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {runpod_key}"
+        }
+
+        print(f"   Язык: {lang}")
+        print(f"   Формат: dialogue")
+        if hf_token:
+            print(f"   Диаризация: включена")
+
+        # Отправка запроса
+        self.root.after(0, lambda: self.status_var.set("⏳ Обработка на сервере..."))
+        print("🔄 Обработка на сервере...")
+
+        try:
+            response = requests.post(
+                self.runpod_endpoint,
+                json=payload,
+                headers=headers,
+                timeout=600  # 10 минут таймаут
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            # RunPod возвращает результат в поле "output"
+            if 'output' in result:
+                return result['output']
+            elif 'id' in result:
+                # Асинхронный запрос - нужно опросить статус
+                job_id = result['id']
+                return self._poll_runpod_result(job_id, runpod_key)
+            else:
+                raise ValueError(f"Неожиданный формат ответа: {result}")
+
+        except requests.Timeout:
+            raise TimeoutError("Превышено время ожидания ответа от сервера")
+        except requests.RequestException as e:
+            raise ValueError(f"Ошибка запроса: {str(e)}")
+
+    def _poll_runpod_result(self, job_id, api_key):
+        """Опрос статуса задачи RunPod."""
+        status_url = f"{self.runpod_endpoint.rsplit('/', 1)[0]}/status/{job_id}"
+        headers = {
+            "Authorization": f"Bearer {api_key}"
+        }
+
+        print(f"⏳ Ожидание результата (Job ID: {job_id})...")
+        max_attempts = 120  # 10 минут (120 * 5 секунд)
+        attempt = 0
+
+        while attempt < max_attempts:
+            try:
+                response = requests.get(status_url, headers=headers, timeout=30)
+                response.raise_for_status()
+                status_data = response.json()
+
+                status = status_data.get('status')
+                if status == 'COMPLETED':
+                    return status_data.get('output')
+                elif status == 'FAILED':
+                    error = status_data.get('error', 'Unknown error')
+                    raise ValueError(f"Задача завершилась с ошибкой: {error}")
+                elif status in ['IN_QUEUE', 'IN_PROGRESS']:
+                    attempt += 1
+                    time.sleep(5)
+                    if attempt % 6 == 0:  # Каждые 30 секунд
+                        print(f"   Статус: {status} ({attempt * 5}s)")
+                else:
+                    raise ValueError(f"Неизвестный статус: {status}")
+
+            except requests.RequestException as e:
+                raise ValueError(f"Ошибка при опросе статуса: {str(e)}")
+
+        raise TimeoutError("Превышено время ожидания результата от сервера")
     
     def transcribe_file(self, filepath):
-        """Транскрипция файла через CLI whisper."""
+        """Транскрипция файла через CLI whisper или сервер."""
         self.transcribing = True
         self.root.after(0, lambda: self.record_btn.config(state=tk.DISABLED))
         self.root.after(0, lambda: self.transcribe_file_btn.config(state=tk.DISABLED))
         self.root.after(0, lambda: self.status_var.set("⏳ Транскрипция..."))
-        
+
         # Получаем длительность
         try:
             duration_result = subprocess.run([
@@ -363,16 +526,68 @@ class InterviewRecorder:
         except:
             total_duration = 0
             dur_str = "??:??"
-        
+
         lang = self.language_var.get()
-        model = self.model_var.get()
         lang_name = "Русский" if lang == "ru" else "English"
-        
+
         print(f"\n⏳ Транскрипция: {filepath}")
         print(f"   Длительность: {dur_str}")
         print(f"   Язык: {lang_name}")
-        print(f"   Модель: {model}")
-        print("-" * 40)
+
+        # Проверяем, использовать ли сервер
+        use_server = self.use_server_var.get()
+
+        if use_server:
+            print(f"   Режим: ☁️  Сервер (WhisperX + диаризация)")
+            print("-" * 40)
+            self._transcribe_on_server_wrapper(filepath)
+        else:
+            model = self.model_var.get()
+            print(f"   Модель: {model}")
+            print(f"   Режим: 💻 Локально (Whisper)")
+            print("-" * 40)
+            self._transcribe_locally(filepath, lang, model)
+
+    def _transcribe_on_server_wrapper(self, filepath):
+        """Обертка для серверной транскрипции."""
+        try:
+            start_time = time.time()
+            result = self.transcribe_on_server(filepath)
+
+            elapsed = time.time() - start_time
+            print(f"\n✅ Завершено за {int(elapsed // 60)}:{int(elapsed % 60):02d}")
+
+            # Форматируем результат
+            text_content = self.format_dialogue_to_text(result)
+
+            # Сохраняем в файл
+            txt_file = filepath.rsplit(".", 1)[0] + ".txt"
+            with open(txt_file, 'w', encoding='utf-8') as f:
+                f.write(text_content)
+
+            txt_size = Path(txt_file).stat().st_size / 1024
+            print(f"✓ Транскрипт: {txt_file} ({txt_size:.1f} KB)")
+
+            num_speakers = result.get('num_speakers', 0)
+            self.root.after(0, lambda: self.status_var.set(f"✅ Транскрипция завершена ({num_speakers} спикеров)"))
+            self.root.after(0, lambda: self.file_var.set(f"📄 {Path(txt_file).name}"))
+
+            if not self.keep_audio_var.get() and filepath == self.output_file:
+                os.remove(filepath)
+                print("✓ Аудиофайл удалён")
+
+        except Exception as e:
+            print(f"❌ Ошибка: {e}")
+            self.root.after(0, lambda: self.status_var.set(f"❌ Ошибка: {str(e)[:30]}"))
+            self.root.after(0, lambda: messagebox.showerror("Ошибка транскрипции", str(e)))
+        finally:
+            self.transcribing = False
+            self.root.after(0, lambda: self.record_btn.config(state=tk.NORMAL))
+            self.root.after(0, lambda: self.transcribe_file_btn.config(state=tk.NORMAL))
+            print("-" * 40)
+
+    def _transcribe_locally(self, filepath, lang, model):
+        """Локальная транскрипция через CLI whisper."""
         
         try:
             check = subprocess.run(["whisper", "--help"], capture_output=True)
