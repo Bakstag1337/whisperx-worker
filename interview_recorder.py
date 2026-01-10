@@ -395,9 +395,17 @@ class InterviewRecorder:
             with open(filepath, 'rb') as f:
                 files = {'file': f}
                 response = requests.post('https://file.io', files=files, timeout=300)
+
+                print(f"   Status code: {response.status_code}")
+                print(f"   Response preview: {response.text[:200]}")
+
                 response.raise_for_status()
 
-                result = response.json()
+                try:
+                    result = response.json()
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"file.io вернул не-JSON ответ. Текст: {response.text[:500]}")
+
                 if result.get('success'):
                     url = result.get('link')
                     print(f"✓ Загружено: {url}")
