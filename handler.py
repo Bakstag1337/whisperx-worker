@@ -69,6 +69,68 @@ try:
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
 
+    def format_as_dialogue(result):
+        """
+        Format whisperx result as a dialogue with speaker turns.
+        Groups consecutive words from the same speaker into utterances.
+        """
+        if 'segments' not in result:
+            return {"dialogue": [], "error": "No segments found"}
+
+        dialogue = []
+        current_speaker = None
+        current_text = []
+        current_start = None
+        current_end = None
+
+        for segment in result['segments']:
+            # Check if segment has words with speaker info
+            if 'words' not in segment:
+                continue
+
+            for word in segment['words']:
+                speaker = word.get('speaker', 'SPEAKER_UNKNOWN')
+                text = word.get('word', '').strip()
+                start = word.get('start')
+                end = word.get('end')
+
+                if not text:
+                    continue
+
+                # If speaker changes, save current utterance and start new one
+                if speaker != current_speaker:
+                    if current_speaker is not None and current_text:
+                        dialogue.append({
+                            'speaker': current_speaker,
+                            'text': ' '.join(current_text).strip(),
+                            'start': current_start,
+                            'end': current_end
+                        })
+
+                    current_speaker = speaker
+                    current_text = [text]
+                    current_start = start
+                    current_end = end
+                else:
+                    # Same speaker, continue utterance
+                    current_text.append(text)
+                    current_end = end
+
+        # Add final utterance
+        if current_speaker is not None and current_text:
+            dialogue.append({
+                'speaker': current_speaker,
+                'text': ' '.join(current_text).strip(),
+                'start': current_start,
+                'end': current_end
+            })
+
+        return {
+            'dialogue': dialogue,
+            'language': result.get('language'),
+            'num_speakers': len(set(turn['speaker'] for turn in dialogue))
+        }
+
     def handler(job):
         """ Handler function that will be used to process jobs. """
         print(f"Received job: {job['id']}", flush=True)
@@ -87,6 +149,9 @@ try:
         # Optional speaker count hint
         min_speakers = job_input.get('min_speakers')
         max_speakers = job_input.get('max_speakers')
+
+        # Output format: "full" (default) or "dialogue"
+        output_format = job_input.get('format', 'full')
 
         # Use a temp directory for the file
         with tempfile.TemporaryDirectory() as tmpdirname:
@@ -131,8 +196,13 @@ try:
             else:
                 print("Skipping diarization (no token).", flush=True)
 
-        # Cleanup is automatic via tempfile, but we return the full JSON result
-        return result
+        # Format output based on requested format
+        if output_format == 'dialogue':
+            print("Formatting as dialogue...", flush=True)
+            return format_as_dialogue(result)
+        else:
+            # Return full whisperx result
+            return result
 
     # Initialize the model on container start
     if torch.cuda.is_available():
