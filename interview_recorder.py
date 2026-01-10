@@ -386,6 +386,28 @@ class InterviewRecorder:
 
         return "\n".join(lines)
 
+    def upload_to_fileio(self, filepath):
+        """Загрузка файла на file.io для получения временного URL."""
+        print("📤 Загрузка на file.io...")
+        self.root.after(0, lambda: self.status_var.set("📤 Загрузка на file.io..."))
+
+        try:
+            with open(filepath, 'rb') as f:
+                files = {'file': f}
+                response = requests.post('https://file.io', files=files, timeout=300)
+                response.raise_for_status()
+
+                result = response.json()
+                if result.get('success'):
+                    url = result.get('link')
+                    print(f"✓ Загружено: {url}")
+                    print(f"   Файл будет удален после первого скачивания")
+                    return url
+                else:
+                    raise ValueError(f"file.io вернул ошибку: {result.get('message', 'Unknown error')}")
+        except requests.RequestException as e:
+            raise ValueError(f"Не удалось загрузить на file.io: {str(e)}")
+
     def transcribe_on_server(self, filepath):
         """Отправка файла на сервер для транскрипции."""
         runpod_key = os.environ.get('RUNPOD_API_KEY')
@@ -393,26 +415,42 @@ class InterviewRecorder:
         if not runpod_key:
             raise ValueError("RUNPOD_API_KEY не установлен в переменных окружения.\n\nДобавьте в ~/.bashrc:\nexport RUNPOD_API_KEY=\"ваш_ключ\"")
 
-        # Читаем файл и конвертируем в base64
+        # Проверяем размер файла и выбираем метод отправки
         print(f"📤 Отправка на сервер: {filepath}")
         file_size_mb = Path(filepath).stat().st_size / (1024 * 1024)
         print(f"   Размер файла: {file_size_mb:.1f} MB")
 
-        self.root.after(0, lambda: self.status_var.set(f"📤 Загрузка файла ({file_size_mb:.1f} MB)..."))
-
-        with open(filepath, 'rb') as f:
-            audio_data = f.read()
-            audio_base64 = base64.b64encode(audio_data).decode('utf-8')
-
-        # Подготовка запроса
         lang = self.language_var.get()
-        payload = {
-            "input": {
-                "audio_base64": audio_base64,
-                "language": lang,
-                "format": "dialogue"
+
+        # Выбор метода: base64 для малых файлов, URL для больших
+        if file_size_mb < 1:
+            # Малый файл - отправляем через base64 (быстрее)
+            print(f"   Метод: base64 (файл < 1 MB)")
+            self.root.after(0, lambda: self.status_var.set(f"📤 Кодирование ({file_size_mb:.1f} MB)..."))
+
+            with open(filepath, 'rb') as f:
+                audio_data = f.read()
+                audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+
+            payload = {
+                "input": {
+                    "audio_base64": audio_base64,
+                    "language": lang,
+                    "format": "dialogue"
+                }
             }
-        }
+        else:
+            # Большой файл - загружаем на file.io и отправляем URL
+            print(f"   Метод: URL через file.io (файл >= 1 MB)")
+            audio_url = self.upload_to_fileio(filepath)
+
+            payload = {
+                "input": {
+                    "audio_url": audio_url,
+                    "language": lang,
+                    "format": "dialogue"
+                }
+            }
 
         headers = {
             "Content-Type": "application/json",
@@ -450,7 +488,18 @@ class InterviewRecorder:
         except requests.Timeout:
             raise TimeoutError("Превышено время ожидания ответа от сервера")
         except requests.RequestException as e:
-            raise ValueError(f"Ошибка запроса: {str(e)}")
+            error_detail = str(e)
+            # Попробуем получить детали ошибки от сервера
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_data = e.response.json()
+                    if 'message' in error_data:
+                        error_detail = f"{error_detail}\nДетали: {error_data['message']}"
+                    elif 'error' in error_data:
+                        error_detail = f"{error_detail}\nДетали: {error_data['error']}"
+                except:
+                    pass
+            raise ValueError(f"Ошибка запроса: {error_detail}")
 
     def _poll_runpod_result(self, job_id, api_key):
         """Опрос статуса задачи RunPod."""
