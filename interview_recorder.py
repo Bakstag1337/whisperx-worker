@@ -90,7 +90,7 @@ class InterviewRecorder:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("🎙 Interview Recorder")
-        self.root.geometry("450x600")
+        self.root.geometry("450x450")
         self.root.resizable(False, False)
 
         self.recording = False
@@ -185,20 +185,6 @@ class InterviewRecorder:
             text="☁️ Транскрибировать на сервере (WhisperX + диаризация)",
             variable=self.use_server_var
         ).pack(anchor=tk.W, pady=(5, 0))
-
-        # Server API keys frame
-        server_frame = ttk.Frame(options_frame)
-        server_frame.pack(fill=tk.X, pady=(5, 0))
-
-        ttk.Label(server_frame, text="RunPod API Key:", font=("", 9)).pack(anchor=tk.W)
-        self.runpod_key_var = tk.StringVar()
-        runpod_entry = ttk.Entry(server_frame, textvariable=self.runpod_key_var, show="*", width=40)
-        runpod_entry.pack(fill=tk.X, pady=(2, 5))
-
-        ttk.Label(server_frame, text="HuggingFace Token:", font=("", 9)).pack(anchor=tk.W)
-        self.hf_token_var = tk.StringVar()
-        hf_entry = ttk.Entry(server_frame, textvariable=self.hf_token_var, show="*", width=40)
-        hf_entry.pack(fill=tk.X, pady=(2, 0))
         
         # Кнопки записи
         btn_frame = ttk.Frame(main)
@@ -402,11 +388,10 @@ class InterviewRecorder:
 
     def transcribe_on_server(self, filepath):
         """Отправка файла на сервер для транскрипции."""
-        runpod_key = self.runpod_key_var.get().strip()
-        hf_token = self.hf_token_var.get().strip()
+        runpod_key = os.environ.get('RUNPOD_API_KEY')
 
         if not runpod_key:
-            raise ValueError("RunPod API Key не указан")
+            raise ValueError("RUNPOD_API_KEY не установлен в переменных окружения.\n\nДобавьте в ~/.bashrc:\nexport RUNPOD_API_KEY=\"ваш_ключ\"")
 
         # Читаем файл и конвертируем в base64
         print(f"📤 Отправка на сервер: {filepath}")
@@ -429,10 +414,6 @@ class InterviewRecorder:
             }
         }
 
-        # Добавляем HF токен если указан
-        if hf_token:
-            payload["input"]["hf_token"] = hf_token
-
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {runpod_key}"
@@ -440,8 +421,7 @@ class InterviewRecorder:
 
         print(f"   Язык: {lang}")
         print(f"   Формат: dialogue")
-        if hf_token:
-            print(f"   Диаризация: включена")
+        print(f"   Диаризация: включена (HF_TOKEN на сервере)")
 
         # Отправка запроса
         self.root.after(0, lambda: self.status_var.set("⏳ Обработка на сервере..."))
