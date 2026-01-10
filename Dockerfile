@@ -5,6 +5,7 @@ FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04
 RUN apt-get update && apt-get install -y \
     git \
     ffmpeg \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install WhisperX and RunPod SDK (in one layer to save space)
@@ -15,8 +16,12 @@ RUN pip install --no-cache-dir \
 # Create app directory
 WORKDIR /app
 
-# Copy handler
-COPY handler.py /app/handler.py
+# Copy entrypoint script (handler.py will be downloaded at runtime)
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Optional: Copy handler.py as fallback if GitHub is unreachable
+COPY handler.py /app/handler.py.fallback
 
 # Entrypoint for RunPod Serverless
-CMD [ "python", "-u", "/app/handler.py" ]
+CMD [ "/app/entrypoint.sh" ]
