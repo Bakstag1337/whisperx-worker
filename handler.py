@@ -6,17 +6,14 @@ print("--- WORKER STARTING ---", flush=True)
 try:
     print("Importing dependencies...", flush=True)
     import runpod
-    import whisperx
     import torch
     import os
     import requests
     import tempfile
 
-    print("Imports successful.", flush=True)
-
     # Fix for PyTorch 2.6+ weights_only=True default
-    # Patch torch.load to use weights_only=False for loading trusted models
-    # This is safe as we only load official WhisperX and pyannote models from Hugging Face
+    # CRITICAL: Patch torch.load BEFORE importing whisperx
+    # Libraries cache torch.load reference during import, so patch must come first
     print("Patching torch.load for trusted model loading...", flush=True)
     _original_torch_load = torch.load
 
@@ -28,6 +25,10 @@ try:
 
     torch.load = patched_torch_load
     print("torch.load patched successfully.", flush=True)
+
+    # Now import whisperx after patching torch.load
+    import whisperx
+    print("Imports successful.", flush=True)
 
     # Global model variable for warm starts
     model = None
