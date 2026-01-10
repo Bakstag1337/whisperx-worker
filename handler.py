@@ -55,7 +55,8 @@ try:
         if hf_token:
             print("Loading Diarization model...", flush=True)
             try:
-                diarize_model = whisperx.DiarizationPipeline(use_auth_token=hf_token, device=device)
+                # whisperx changed API - now use load_diarize_model
+                diarize_model = whisperx.load_diarize_model(use_auth_token=hf_token, device=device)
             except Exception as e:
                  print(f"WARNING: Failed to load Diarization Model: {e}", flush=True)
                  # We don't raise here to allow basic transcription to work
@@ -150,6 +151,9 @@ try:
         min_speakers = job_input.get('min_speakers')
         max_speakers = job_input.get('max_speakers')
 
+        # Optional language code (e.g. "en", "ru", "uk"). If not provided, auto-detect
+        language = job_input.get('language')
+
         # Output format: "full" (default) or "dialogue"
         output_format = job_input.get('format', 'full')
 
@@ -173,7 +177,16 @@ try:
             # 1. Transcribe
             print("Transcribing...", flush=True)
             audio = whisperx.load_audio(audio_path)
-            result = model.transcribe(audio, batch_size=batch_size)
+
+            # Pass language if provided, otherwise auto-detect
+            transcribe_options = {'batch_size': batch_size}
+            if language:
+                transcribe_options['language'] = language
+                print(f"Using language: {language}", flush=True)
+            else:
+                print("Auto-detecting language...", flush=True)
+
+            result = model.transcribe(audio, **transcribe_options)
             
             # 2. Align
             print("Aligning...", flush=True)
@@ -183,15 +196,16 @@ try:
             # 3. Diarize
             # Check if we need to load or use provided token
             current_diarize_model = diarize_model
-            
+
             # If token provided in request but model not loaded globally
             if not current_diarize_model and req_hf_token:
                  print("Loading Diarization model (request-scoped)...", flush=True)
-                 current_diarize_model = whisperx.DiarizationPipeline(use_auth_token=req_hf_token, device=device)
-            
+                 current_diarize_model = whisperx.load_diarize_model(use_auth_token=req_hf_token, device=device)
+
             if current_diarize_model:
                 print("Diarizing...", flush=True)
-                diarize_segments = current_diarize_model(audio, min_speakers=min_speakers, max_speakers=max_speakers)
+                # whisperx changed API - now use whisperx.diarize function
+                diarize_segments = whisperx.diarize(current_diarize_model, audio, min_speakers=min_speakers, max_speakers=max_speakers)
                 result = whisperx.assign_word_speakers(diarize_segments, result)
             else:
                 print("Skipping diarization (no token).", flush=True)
