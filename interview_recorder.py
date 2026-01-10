@@ -423,9 +423,9 @@ class InterviewRecorder:
         lang = self.language_var.get()
 
         # Выбор метода: base64 для малых файлов, URL для больших
-        if file_size_mb < 10:
+        if file_size_mb < 1:
             # Малый файл - отправляем через base64 (быстрее)
-            print(f"   Метод: base64 (файл < 10 MB)")
+            print(f"   Метод: base64 (файл < 1 MB)")
             self.root.after(0, lambda: self.status_var.set(f"📤 Кодирование ({file_size_mb:.1f} MB)..."))
 
             with open(filepath, 'rb') as f:
@@ -441,7 +441,7 @@ class InterviewRecorder:
             }
         else:
             # Большой файл - загружаем на file.io и отправляем URL
-            print(f"   Метод: URL через file.io (файл >= 10 MB)")
+            print(f"   Метод: URL через file.io (файл >= 1 MB)")
             audio_url = self.upload_to_fileio(filepath)
 
             payload = {
