@@ -55,10 +55,17 @@ try:
         if hf_token:
             print("Loading Diarization model...", flush=True)
             try:
-                # whisperx changed API - now use load_diarize_model
-                diarize_model = whisperx.load_diarize_model(use_auth_token=hf_token, device=device)
+                # Use pyannote.audio directly
+                from pyannote.audio import Pipeline
+                diarize_model = Pipeline.from_pretrained(
+                    "pyannote/speaker-diarization-3.1",
+                    use_auth_token=hf_token
+                )
+                diarize_model.to(torch.device(device))
+                print("Diarization model loaded successfully.", flush=True)
             except Exception as e:
                  print(f"WARNING: Failed to load Diarization Model: {e}", flush=True)
+                 diarize_model = None
                  # We don't raise here to allow basic transcription to work
         else:
             print("No HF_TOKEN provided. Diarization disabled.", flush=True)
@@ -200,12 +207,27 @@ try:
             # If token provided in request but model not loaded globally
             if not current_diarize_model and req_hf_token:
                  print("Loading Diarization model (request-scoped)...", flush=True)
-                 current_diarize_model = whisperx.load_diarize_model(use_auth_token=req_hf_token, device=device)
+                 try:
+                     from pyannote.audio import Pipeline
+                     current_diarize_model = Pipeline.from_pretrained(
+                         "pyannote/speaker-diarization-3.1",
+                         use_auth_token=req_hf_token
+                     )
+                     current_diarize_model.to(torch.device(device))
+                 except Exception as e:
+                     print(f"WARNING: Failed to load request-scoped diarization: {e}", flush=True)
+                     current_diarize_model = None
 
             if current_diarize_model:
                 print("Diarizing...", flush=True)
-                # whisperx changed API - now use whisperx.diarize function
-                diarize_segments = whisperx.diarize(current_diarize_model, audio, min_speakers=min_speakers, max_speakers=max_speakers)
+                # Run pyannote diarization
+                diarize_options = {}
+                if min_speakers:
+                    diarize_options['min_speakers'] = min_speakers
+                if max_speakers:
+                    diarize_options['max_speakers'] = max_speakers
+
+                diarize_segments = current_diarize_model(audio_path, **diarize_options)
                 result = whisperx.assign_word_speakers(diarize_segments, result)
             else:
                 print("Skipping diarization (no token).", flush=True)
