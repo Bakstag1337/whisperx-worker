@@ -386,35 +386,55 @@ class InterviewRecorder:
 
         return "\n".join(lines)
 
-    def upload_to_fileio(self, filepath):
-        """Загрузка файла на file.io для получения временного URL."""
-        print("📤 Загрузка на file.io...")
-        self.root.after(0, lambda: self.status_var.set("📤 Загрузка на file.io..."))
+    def upload_to_pocketbase(self, filepath):
+        """Загрузка файла в PocketBase для получения публичного URL."""
+        print("📤 Загрузка в PocketBase...")
+        self.root.after(0, lambda: self.status_var.set("📤 Загрузка в PocketBase..."))
+
+        pocketbase_url = "https://disappear-night.pockethost.io"
+        collection = "temp_audio"
 
         try:
             with open(filepath, 'rb') as f:
-                files = {'file': f}
-                response = requests.post('https://file.io', files=files, timeout=300)
-
-                print(f"   Status code: {response.status_code}")
-                print(f"   Response preview: {response.text[:200]}")
-
+                files = {'audio': f}
+                response = requests.post(
+                    f"{pocketbase_url}/api/collections/{collection}/records",
+                    files=files,
+                    timeout=300
+                )
                 response.raise_for_status()
 
-                try:
-                    result = response.json()
-                except json.JSONDecodeError as e:
-                    raise ValueError(f"file.io вернул не-JSON ответ. Текст: {response.text[:500]}")
+                result = response.json()
+                record_id = result.get('id')
+                filename = result.get('audio')
 
-                if result.get('success'):
-                    url = result.get('link')
-                    print(f"✓ Загружено: {url}")
-                    print(f"   Файл будет удален после первого скачивания")
-                    return url
-                else:
-                    raise ValueError(f"file.io вернул ошибку: {result.get('message', 'Unknown error')}")
+                if not record_id or not filename:
+                    raise ValueError(f"PocketBase вернул неполные данные: {result}")
+
+                # Формируем публичный URL файла
+                file_url = f"{pocketbase_url}/api/files/{collection}/{record_id}/{filename}"
+
+                print(f"✓ Загружено: {file_url}")
+                print(f"   Record ID: {record_id}")
+                return file_url, record_id
+
         except requests.RequestException as e:
-            raise ValueError(f"Не удалось загрузить на file.io: {str(e)}")
+            raise ValueError(f"Не удалось загрузить в PocketBase: {str(e)}")
+
+    def delete_from_pocketbase(self, record_id):
+        """Удаление файла из PocketBase после использования."""
+        pocketbase_url = "https://disappear-night.pockethost.io"
+        collection = "temp_audio"
+
+        try:
+            response = requests.delete(
+                f"{pocketbase_url}/api/collections/{collection}/records/{record_id}",
+                timeout=30
+            )
+            response.raise_for_status()
+            print(f"✓ Файл удален из PocketBase (Record ID: {record_id})")
+        except requests.RequestException as e:
+            print(f"⚠️ Не удалось удалить из PocketBase: {str(e)}")
 
     def transcribe_on_server(self, filepath):
         """Отправка файла на сервер для транскрипции."""
@@ -423,14 +443,16 @@ class InterviewRecorder:
         if not runpod_key:
             raise ValueError("RUNPOD_API_KEY не установлен в переменных окружения.\n\nДобавьте в ~/.bashrc:\nexport RUNPOD_API_KEY=\"ваш_ключ\"")
 
-        # Проверяем размер файла и выбираем метод отправки
+        # Проверяем размер и выбираем метод отправки
         print(f"📤 Отправка на сервер: {filepath}")
         file_size_mb = Path(filepath).stat().st_size / (1024 * 1024)
         print(f"   Размер файла: {file_size_mb:.1f} MB")
 
         lang = self.language_var.get()
 
-        # Выбор метода: base64 для малых файлов, URL для больших
+        # Выбор метода: base64 для малых файлов, PocketBase URL для больших
+        pocketbase_record_id = None  # Для автоудаления после транскрипции
+
         if file_size_mb < 1:
             # Малый файл - отправляем через base64 (быстрее)
             print(f"   Метод: base64 (файл < 1 MB)")
@@ -448,9 +470,9 @@ class InterviewRecorder:
                 }
             }
         else:
-            # Большой файл - загружаем на file.io и отправляем URL
-            print(f"   Метод: URL через file.io (файл >= 1 MB)")
-            audio_url = self.upload_to_fileio(filepath)
+            # Большой файл - загружаем в PocketBase и отправляем URL
+            print(f"   Метод: URL через PocketBase (файл >= 1 MB)")
+            audio_url, pocketbase_record_id = self.upload_to_pocketbase(filepath)
 
             payload = {
                 "input": {
@@ -485,17 +507,30 @@ class InterviewRecorder:
 
             # RunPod возвращает результат в поле "output"
             if 'output' in result:
-                return result['output']
+                output = result['output']
             elif 'id' in result:
                 # Асинхронный запрос - нужно опросить статус
                 job_id = result['id']
-                return self._poll_runpod_result(job_id, runpod_key)
+                output = self._poll_runpod_result(job_id, runpod_key)
             else:
                 raise ValueError(f"Неожиданный формат ответа: {result}")
 
+            # Удаляем файл из PocketBase после успешной обработки
+            if pocketbase_record_id:
+                self.delete_from_pocketbase(pocketbase_record_id)
+
+            return output
+
         except requests.Timeout:
+            # Удаляем файл даже при ошибке
+            if pocketbase_record_id:
+                self.delete_from_pocketbase(pocketbase_record_id)
             raise TimeoutError("Превышено время ожидания ответа от сервера")
         except requests.RequestException as e:
+            # Удаляем файл даже при ошибке
+            if pocketbase_record_id:
+                self.delete_from_pocketbase(pocketbase_record_id)
+
             error_detail = str(e)
             # Попробуем получить детали ошибки от сервера
             if hasattr(e, 'response') and e.response is not None:
