@@ -404,6 +404,14 @@ class InterviewRecorder:
             audio_data = f.read()
             audio_base64 = base64.b64encode(audio_data).decode('utf-8')
 
+        # Проверяем размер payload
+        base64_size_mb = len(audio_base64) / (1024 * 1024)
+        print(f"   Размер base64: {base64_size_mb:.1f} MB")
+
+        # RunPod имеет лимит ~20MB на payload
+        if base64_size_mb > 18:
+            raise ValueError(f"Файл слишком большой ({base64_size_mb:.1f} MB в base64). Максимум ~15 MB исходного файла (~18 MB в base64).\n\nСожми аудио или раздели на части.")
+
         # Подготовка запроса
         lang = self.language_var.get()
         payload = {
@@ -450,7 +458,18 @@ class InterviewRecorder:
         except requests.Timeout:
             raise TimeoutError("Превышено время ожидания ответа от сервера")
         except requests.RequestException as e:
-            raise ValueError(f"Ошибка запроса: {str(e)}")
+            error_detail = str(e)
+            # Попробуем получить детали ошибки от сервера
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_data = e.response.json()
+                    if 'message' in error_data:
+                        error_detail = f"{error_detail}\nДетали: {error_data['message']}"
+                    elif 'error' in error_data:
+                        error_detail = f"{error_detail}\nДетали: {error_data['error']}"
+                except:
+                    pass
+            raise ValueError(f"Ошибка запроса: {error_detail}")
 
     def _poll_runpod_result(self, job_id, api_key):
         """Опрос статуса задачи RunPod."""
