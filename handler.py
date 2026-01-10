@@ -18,7 +18,6 @@ try:
     # Patch torch.load to use weights_only=False for loading trusted models
     # This is safe as we only load official WhisperX and pyannote models from Hugging Face
     print("Patching torch.load for trusted model loading...", flush=True)
-    import torch._serialization
     _original_torch_load = torch.load
 
     def patched_torch_load(*args, **kwargs):
