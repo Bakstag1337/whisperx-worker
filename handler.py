@@ -18,11 +18,17 @@ try:
     # pyannote VAD models contain omegaconf objects that need to be explicitly allowlisted
     print("Configuring PyTorch safe globals for model loading...", flush=True)
     try:
-        from omegaconf.listconfig import ListConfig
-        from omegaconf.dictconfig import DictConfig
-        from omegaconf.base import Container, ContainerMetadata
-        torch.serialization.add_safe_globals([ListConfig, DictConfig, Container, ContainerMetadata])
-        print("Added OmegaConf types to PyTorch safe globals.", flush=True)
+        # Import all necessary OmegaConf classes
+        from omegaconf import DictConfig, ListConfig, OmegaConf
+        from omegaconf.base import Container, Node, SCMode, ContainerMetadata
+        from omegaconf.basecontainer import BaseContainer
+
+        safe_classes = [
+            DictConfig, ListConfig, OmegaConf,
+            Container, Node, SCMode, ContainerMetadata, BaseContainer
+        ]
+        torch.serialization.add_safe_globals(safe_classes)
+        print(f"Added {len(safe_classes)} OmegaConf types to PyTorch safe globals.", flush=True)
     except ImportError as e:
         print(f"WARNING: Could not import omegaconf: {e}", flush=True)
     except Exception as e:
