@@ -386,34 +386,40 @@ class InterviewRecorder:
 
         return "\n".join(lines)
 
-    def upload_to_tmpfiles(self, filepath):
-        """Загрузка файла на tmpfiles.org для получения временного URL."""
-        print("📤 Загрузка на tmpfiles.org...")
-        self.root.after(0, lambda: self.status_var.set("📤 Загрузка на tmpfiles.org..."))
+    def upload_to_pocketbase(self, filepath):
+        """Загрузка файла в PocketBase для получения публичного URL."""
+        print("📤 Загрузка в PocketBase...")
+        self.root.after(0, lambda: self.status_var.set("📤 Загрузка в PocketBase..."))
+
+        pocketbase_url = "https://disappear-night.pockethost.io"
+        collection = "temp_audio"
 
         try:
             with open(filepath, 'rb') as f:
-                files = {'file': f}
-                response = requests.post('https://tmpfiles.org/api/v1/upload', files=files, timeout=300)
+                files = {'audio': f}
+                response = requests.post(
+                    f"{pocketbase_url}/api/collections/{collection}/records",
+                    files=files,
+                    timeout=300
+                )
                 response.raise_for_status()
 
                 result = response.json()
-                if result.get('status') == 'success':
-                    url = result.get('data', {}).get('url', '')
-                    # tmpfiles.org требует /dl/ в URL для прямого скачивания
-                    # Заменяем tmpfiles.org/123/file.mp3 на tmpfiles.org/dl/123/file.mp3
-                    if 'tmpfiles.org/' in url:
-                        parts = url.split('tmpfiles.org/')
-                        if len(parts) == 2 and not parts[1].startswith('dl/'):
-                            url = parts[0] + 'tmpfiles.org/dl/' + parts[1]
+                record_id = result.get('id')
+                filename = result.get('audio')
 
-                    print(f"✓ Загружено: {url}")
-                    print(f"   Файл хранится 1 час")
-                    return url
-                else:
-                    raise ValueError(f"tmpfiles.org вернул ошибку: {result.get('message', 'Unknown error')}")
+                if not record_id or not filename:
+                    raise ValueError(f"PocketBase вернул неполные данные: {result}")
+
+                # Формируем публичный URL файла
+                file_url = f"{pocketbase_url}/api/files/{collection}/{record_id}/{filename}"
+
+                print(f"✓ Загружено: {file_url}")
+                print(f"   Record ID: {record_id}")
+                return file_url
+
         except requests.RequestException as e:
-            raise ValueError(f"Не удалось загрузить на tmpfiles.org: {str(e)}")
+            raise ValueError(f"Не удалось загрузить в PocketBase: {str(e)}")
 
     def transcribe_on_server(self, filepath):
         """Отправка файла на сервер для транскрипции."""
@@ -422,31 +428,42 @@ class InterviewRecorder:
         if not runpod_key:
             raise ValueError("RUNPOD_API_KEY не установлен в переменных окружения.\n\nДобавьте в ~/.bashrc:\nexport RUNPOD_API_KEY=\"ваш_ключ\"")
 
-        # Отправляем через base64
+        # Проверяем размер и выбираем метод отправки
         print(f"📤 Отправка на сервер: {filepath}")
         file_size_mb = Path(filepath).stat().st_size / (1024 * 1024)
         print(f"   Размер файла: {file_size_mb:.1f} MB")
 
-        # Проверка размера (RunPod имеет лимит ~20MB на payload)
-        if file_size_mb > 15:
-            raise ValueError(f"Файл слишком большой ({file_size_mb:.1f} MB). Максимум 15 MB.")
-
         lang = self.language_var.get()
 
-        print(f"   Метод: base64")
-        self.root.after(0, lambda: self.status_var.set(f"📤 Кодирование ({file_size_mb:.1f} MB)..."))
+        # Выбор метода: base64 для малых файлов, PocketBase URL для больших
+        if file_size_mb < 1:
+            # Малый файл - отправляем через base64 (быстрее)
+            print(f"   Метод: base64 (файл < 1 MB)")
+            self.root.after(0, lambda: self.status_var.set(f"📤 Кодирование ({file_size_mb:.1f} MB)..."))
 
-        with open(filepath, 'rb') as f:
-            audio_data = f.read()
-            audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+            with open(filepath, 'rb') as f:
+                audio_data = f.read()
+                audio_base64 = base64.b64encode(audio_data).decode('utf-8')
 
-        payload = {
-            "input": {
-                "audio_base64": audio_base64,
-                "language": lang,
-                "format": "dialogue"
+            payload = {
+                "input": {
+                    "audio_base64": audio_base64,
+                    "language": lang,
+                    "format": "dialogue"
+                }
             }
-        }
+        else:
+            # Большой файл - загружаем в PocketBase и отправляем URL
+            print(f"   Метод: URL через PocketBase (файл >= 1 MB)")
+            audio_url = self.upload_to_pocketbase(filepath)
+
+            payload = {
+                "input": {
+                    "audio_url": audio_url,
+                    "language": lang,
+                    "format": "dialogue"
+                }
+            }
 
         headers = {
             "Content-Type": "application/json",
