@@ -19,10 +19,14 @@ import os
 import base64
 import json
 import requests
+import urllib3
 from datetime import datetime
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+
+# Disable SSL warnings for PocketHost (certificate issues)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class AudioMeter:
@@ -400,7 +404,8 @@ class InterviewRecorder:
                 response = requests.post(
                     f"{pocketbase_url}/api/collections/{collection}/records",
                     files=files,
-                    timeout=300
+                    timeout=300,
+                    verify=False  # Skip SSL verification for PocketHost
                 )
                 response.raise_for_status()
 
@@ -429,7 +434,8 @@ class InterviewRecorder:
         try:
             response = requests.delete(
                 f"{pocketbase_url}/api/collections/{collection}/records/{record_id}",
-                timeout=30
+                timeout=30,
+                verify=False  # Skip SSL verification for PocketHost
             )
             response.raise_for_status()
             print(f"✓ Файл удален из PocketBase (Record ID: {record_id})")
