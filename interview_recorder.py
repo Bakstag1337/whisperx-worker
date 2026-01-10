@@ -422,42 +422,31 @@ class InterviewRecorder:
         if not runpod_key:
             raise ValueError("RUNPOD_API_KEY не установлен в переменных окружения.\n\nДобавьте в ~/.bashrc:\nexport RUNPOD_API_KEY=\"ваш_ключ\"")
 
-        # Проверяем размер файла и выбираем метод отправки
+        # Отправляем через base64
         print(f"📤 Отправка на сервер: {filepath}")
         file_size_mb = Path(filepath).stat().st_size / (1024 * 1024)
         print(f"   Размер файла: {file_size_mb:.1f} MB")
 
+        # Проверка размера (RunPod имеет лимит ~20MB на payload)
+        if file_size_mb > 15:
+            raise ValueError(f"Файл слишком большой ({file_size_mb:.1f} MB). Максимум 15 MB.")
+
         lang = self.language_var.get()
 
-        # Выбор метода: base64 для малых файлов, URL для больших
-        if file_size_mb < 1:
-            # Малый файл - отправляем через base64 (быстрее)
-            print(f"   Метод: base64 (файл < 1 MB)")
-            self.root.after(0, lambda: self.status_var.set(f"📤 Кодирование ({file_size_mb:.1f} MB)..."))
+        print(f"   Метод: base64")
+        self.root.after(0, lambda: self.status_var.set(f"📤 Кодирование ({file_size_mb:.1f} MB)..."))
 
-            with open(filepath, 'rb') as f:
-                audio_data = f.read()
-                audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+        with open(filepath, 'rb') as f:
+            audio_data = f.read()
+            audio_base64 = base64.b64encode(audio_data).decode('utf-8')
 
-            payload = {
-                "input": {
-                    "audio_base64": audio_base64,
-                    "language": lang,
-                    "format": "dialogue"
-                }
+        payload = {
+            "input": {
+                "audio_base64": audio_base64,
+                "language": lang,
+                "format": "dialogue"
             }
-        else:
-            # Большой файл - загружаем на tmpfiles.org и отправляем URL
-            print(f"   Метод: URL через tmpfiles.org (файл >= 1 MB)")
-            audio_url = self.upload_to_tmpfiles(filepath)
-
-            payload = {
-                "input": {
-                    "audio_url": audio_url,
-                    "language": lang,
-                    "format": "dialogue"
-                }
-            }
+        }
 
         headers = {
             "Content-Type": "application/json",
