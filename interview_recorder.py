@@ -424,7 +424,11 @@ class InterviewRecorder:
                 return file_url, record_id
 
         except requests.RequestException as e:
-            raise ValueError(f"Не удалось загрузить в PocketBase: {str(e)}")
+            error_msg = f"Не удалось загрузить в PocketBase: {str(e)}"
+            if hasattr(e, 'response') and e.response is not None:
+                error_msg += f"\nStatus: {e.response.status_code}"
+                error_msg += f"\nResponse: {e.response.text}"
+            raise ValueError(error_msg)
 
     def delete_from_pocketbase(self, record_id):
         """Удаление файла из PocketBase после использования."""
