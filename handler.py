@@ -18,9 +18,9 @@ try:
     _original_torch_load = torch.load
 
     def patched_torch_load(*args, **kwargs):
-        # Use weights_only=False for trusted model sources
-        if 'weights_only' not in kwargs:
-            kwargs['weights_only'] = False
+        # Force weights_only=False for trusted model sources
+        # Override even if explicitly set to True by libraries
+        kwargs['weights_only'] = False
         return _original_torch_load(*args, **kwargs)
 
     torch.load = patched_torch_load
