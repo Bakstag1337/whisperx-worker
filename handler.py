@@ -15,13 +15,13 @@ try:
     print("Imports successful.", flush=True)
 
     # Fix for PyTorch 2.6+ weights_only=True default
-    # pyannote VAD models contain omegaconf.listconfig.ListConfig objects
-    # that need to be explicitly allowlisted
+    # pyannote VAD models contain omegaconf objects that need to be explicitly allowlisted
     print("Configuring PyTorch safe globals for model loading...", flush=True)
     try:
         from omegaconf.listconfig import ListConfig
         from omegaconf.dictconfig import DictConfig
-        torch.serialization.add_safe_globals([ListConfig, DictConfig])
+        from omegaconf.base import Container, ContainerMetadata
+        torch.serialization.add_safe_globals([ListConfig, DictConfig, Container, ContainerMetadata])
         print("Added OmegaConf types to PyTorch safe globals.", flush=True)
     except ImportError as e:
         print(f"WARNING: Could not import omegaconf: {e}", flush=True)
