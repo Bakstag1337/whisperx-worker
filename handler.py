@@ -235,7 +235,22 @@ try:
                     diarize_options['max_speakers'] = max_speakers
 
                 diarize_segments = current_diarize_model(audio_path, **diarize_options)
-                result = whisperx.assign_word_speakers(diarize_segments, result)
+
+                # Convert pyannote Annotation to whisperx format
+                # whisperx expects a pandas DataFrame or dict-like structure
+                print("Converting diarization results...", flush=True)
+                import pandas as pd
+
+                diarize_list = []
+                for turn, _, speaker in diarize_segments.itertracks(yield_label=True):
+                    diarize_list.append({
+                        'start': turn.start,
+                        'end': turn.end,
+                        'speaker': speaker
+                    })
+
+                diarize_df = pd.DataFrame(diarize_list)
+                result = whisperx.assign_word_speakers(diarize_df, result)
             else:
                 print("Skipping diarization (no token).", flush=True)
 
