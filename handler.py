@@ -14,6 +14,20 @@ try:
 
     print("Imports successful.", flush=True)
 
+    # Fix for PyTorch 2.6+ weights_only=True default
+    # pyannote VAD models contain omegaconf.listconfig.ListConfig objects
+    # that need to be explicitly allowlisted
+    print("Configuring PyTorch safe globals for model loading...", flush=True)
+    try:
+        from omegaconf.listconfig import ListConfig
+        from omegaconf.dictconfig import DictConfig
+        torch.serialization.add_safe_globals([ListConfig, DictConfig])
+        print("Added OmegaConf types to PyTorch safe globals.", flush=True)
+    except ImportError as e:
+        print(f"WARNING: Could not import omegaconf: {e}", flush=True)
+    except Exception as e:
+        print(f"WARNING: Could not configure safe globals: {e}", flush=True)
+
     # Global model variable for warm starts
     model = None
     diarize_model = None
