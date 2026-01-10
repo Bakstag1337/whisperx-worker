@@ -22,15 +22,17 @@ try:
         from omegaconf import DictConfig, ListConfig, OmegaConf
         from omegaconf.base import Container, Node, SCMode, ContainerMetadata
         from omegaconf.basecontainer import BaseContainer
+        import typing
 
         safe_classes = [
             DictConfig, ListConfig, OmegaConf,
-            Container, Node, SCMode, ContainerMetadata, BaseContainer
+            Container, Node, SCMode, ContainerMetadata, BaseContainer,
+            typing.Any
         ]
         torch.serialization.add_safe_globals(safe_classes)
-        print(f"Added {len(safe_classes)} OmegaConf types to PyTorch safe globals.", flush=True)
+        print(f"Added {len(safe_classes)} types to PyTorch safe globals.", flush=True)
     except ImportError as e:
-        print(f"WARNING: Could not import omegaconf: {e}", flush=True)
+        print(f"WARNING: Could not import required modules: {e}", flush=True)
     except Exception as e:
         print(f"WARNING: Could not configure safe globals: {e}", flush=True)
 
