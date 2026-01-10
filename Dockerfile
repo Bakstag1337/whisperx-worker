@@ -16,6 +16,12 @@ RUN pip install --no-cache-dir \
 # Create app directory
 WORKDIR /app
 
+# Create temp directory with more space (RunPod has more space in /workspace)
+RUN mkdir -p /workspace/tmp && chmod 777 /workspace/tmp
+
+# Set TMPDIR to use /workspace instead of /tmp
+ENV TMPDIR=/workspace/tmp
+
 # Copy entrypoint script (handler.py will be downloaded at runtime)
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh

@@ -22,5 +22,10 @@ else
     fi
 fi
 
+# Clean up old temporary files (older than 1 hour) to prevent disk space issues
+echo "Cleaning up old temporary files..."
+find /workspace/tmp -type f -mmin +60 -delete 2>/dev/null || true
+echo "✓ Cleanup complete"
+
 echo "Starting worker..."
 exec python -u /app/handler.py
