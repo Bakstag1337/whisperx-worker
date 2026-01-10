@@ -15,24 +15,20 @@ try:
     print("Imports successful.", flush=True)
 
     # Fix for PyTorch 2.6+ weights_only=True default
-    # pyannote VAD models contain omegaconf objects that need to be explicitly allowlisted
-    print("Configuring PyTorch safe globals for model loading...", flush=True)
-    try:
-        # Import all necessary OmegaConf classes
-        from omegaconf import DictConfig, ListConfig, OmegaConf
-        from omegaconf.base import Container, Node, SCMode, ContainerMetadata
-        from omegaconf.basecontainer import BaseContainer
+    # Patch torch.load to use weights_only=False for loading trusted models
+    # This is safe as we only load official WhisperX and pyannote models from Hugging Face
+    print("Patching torch.load for trusted model loading...", flush=True)
+    import torch._serialization
+    _original_torch_load = torch.load
 
-        safe_classes = [
-            DictConfig, ListConfig, OmegaConf,
-            Container, Node, SCMode, ContainerMetadata, BaseContainer
-        ]
-        torch.serialization.add_safe_globals(safe_classes)
-        print(f"Added {len(safe_classes)} OmegaConf types to PyTorch safe globals.", flush=True)
-    except ImportError as e:
-        print(f"WARNING: Could not import omegaconf: {e}", flush=True)
-    except Exception as e:
-        print(f"WARNING: Could not configure safe globals: {e}", flush=True)
+    def patched_torch_load(*args, **kwargs):
+        # Use weights_only=False for trusted model sources
+        if 'weights_only' not in kwargs:
+            kwargs['weights_only'] = False
+        return _original_torch_load(*args, **kwargs)
+
+    torch.load = patched_torch_load
+    print("torch.load patched successfully.", flush=True)
 
     # Global model variable for warm starts
     model = None
