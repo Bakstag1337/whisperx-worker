@@ -73,29 +73,37 @@ try:
         """ Handler function that will be used to process jobs. """
         print(f"Received job: {job['id']}", flush=True)
         job_input = job['input']
-        
-        # Extract inputs
+
+        # Extract inputs - support both URL and base64
         audio_url = job_input.get('audio_url')
-        if not audio_url:
-            return {"error": "Missing 'audio_url' in input"}
-        
+        audio_base64 = job_input.get('audio_base64')
+
+        if not audio_url and not audio_base64:
+            return {"error": "Missing 'audio_url' or 'audio_base64' in input"}
+
         # Optional auth token override
         req_hf_token = job_input.get('hf_token')
-        
+
         # Optional speaker count hint
         min_speakers = job_input.get('min_speakers')
         max_speakers = job_input.get('max_speakers')
 
-        print(f"Processing audio: {audio_url}", flush=True)
-
         # Use a temp directory for the file
         with tempfile.TemporaryDirectory() as tmpdirname:
             audio_path = os.path.join(tmpdirname, "audio.mp3") # Extension might vary, ffmpeg handles it
-            
+
             try:
-                download_file(audio_url, audio_path)
+                if audio_base64:
+                    print("Processing base64 audio data...", flush=True)
+                    import base64
+                    audio_data = base64.b64decode(audio_base64)
+                    with open(audio_path, 'wb') as f:
+                        f.write(audio_data)
+                else:
+                    print(f"Processing audio from URL: {audio_url}", flush=True)
+                    download_file(audio_url, audio_path)
             except Exception as e:
-                return {"error": f"Failed to download audio: {str(e)}"}
+                return {"error": f"Failed to load audio: {str(e)}"}
 
             # 1. Transcribe
             print("Transcribing...", flush=True)
