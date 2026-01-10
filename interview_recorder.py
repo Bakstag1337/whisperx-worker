@@ -386,35 +386,34 @@ class InterviewRecorder:
 
         return "\n".join(lines)
 
-    def upload_to_fileio(self, filepath):
-        """Загрузка файла на file.io для получения временного URL."""
-        print("📤 Загрузка на file.io...")
-        self.root.after(0, lambda: self.status_var.set("📤 Загрузка на file.io..."))
+    def upload_to_tmpfiles(self, filepath):
+        """Загрузка файла на tmpfiles.org для получения временного URL."""
+        print("📤 Загрузка на tmpfiles.org...")
+        self.root.after(0, lambda: self.status_var.set("📤 Загрузка на tmpfiles.org..."))
 
         try:
             with open(filepath, 'rb') as f:
                 files = {'file': f}
-                response = requests.post('https://file.io', files=files, timeout=300)
-
-                print(f"   Status code: {response.status_code}")
-                print(f"   Response preview: {response.text[:200]}")
-
+                response = requests.post('https://tmpfiles.org/api/v1/upload', files=files, timeout=300)
                 response.raise_for_status()
 
-                try:
-                    result = response.json()
-                except json.JSONDecodeError as e:
-                    raise ValueError(f"file.io вернул не-JSON ответ. Текст: {response.text[:500]}")
+                result = response.json()
+                if result.get('status') == 'success':
+                    url = result.get('data', {}).get('url', '')
+                    # tmpfiles.org требует /dl/ в URL для прямого скачивания
+                    # Заменяем tmpfiles.org/123/file.mp3 на tmpfiles.org/dl/123/file.mp3
+                    if 'tmpfiles.org/' in url:
+                        parts = url.split('tmpfiles.org/')
+                        if len(parts) == 2 and not parts[1].startswith('dl/'):
+                            url = parts[0] + 'tmpfiles.org/dl/' + parts[1]
 
-                if result.get('success'):
-                    url = result.get('link')
                     print(f"✓ Загружено: {url}")
-                    print(f"   Файл будет удален после первого скачивания")
+                    print(f"   Файл хранится 1 час")
                     return url
                 else:
-                    raise ValueError(f"file.io вернул ошибку: {result.get('message', 'Unknown error')}")
+                    raise ValueError(f"tmpfiles.org вернул ошибку: {result.get('message', 'Unknown error')}")
         except requests.RequestException as e:
-            raise ValueError(f"Не удалось загрузить на file.io: {str(e)}")
+            raise ValueError(f"Не удалось загрузить на tmpfiles.org: {str(e)}")
 
     def transcribe_on_server(self, filepath):
         """Отправка файла на сервер для транскрипции."""
@@ -448,9 +447,9 @@ class InterviewRecorder:
                 }
             }
         else:
-            # Большой файл - загружаем на file.io и отправляем URL
-            print(f"   Метод: URL через file.io (файл >= 1 MB)")
-            audio_url = self.upload_to_fileio(filepath)
+            # Большой файл - загружаем на tmpfiles.org и отправляем URL
+            print(f"   Метод: URL через tmpfiles.org (файл >= 1 MB)")
+            audio_url = self.upload_to_tmpfiles(filepath)
 
             payload = {
                 "input": {
